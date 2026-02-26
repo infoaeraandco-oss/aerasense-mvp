@@ -44,7 +44,6 @@ type Analysis = {
 /* -------------------- CONSTANTS -------------------- */
 const APP_NAME = "AeraInsight";
 const LS_LAST_SCAN = "aerainsight_last_scan";
-const LS_WAITLIST = "aerainsight_waitlist_emails";
 
 /* Answer → score */
 const scoreMap: Record<OilKey | MoistureKey | RednessKey, number> = {
@@ -141,7 +140,7 @@ function buildRoutines(
     climateBand === "High"
       ? "Environment stress is higher right now, so keep steps protective and conservative."
       : climateBand === "Moderate"
-      ? "Some environment stress today — focus on hydration + consistency."
+      ? "Some environment stress lately — focus on hydration + consistency."
       : "Lower environment stress — keep the routine steady and simple.";
 
   // Base steps (safe, universal)
@@ -252,7 +251,7 @@ function analyzeSkin(oil: number, moisture: number, redness: number, env: EnvKey
 
   // Environment load (MVP: manual exposure, not live weather)
   let climateBand: Band = "Low";
-  let climateNote = "Lower exposure today — keep your routine consistent.";
+  let climateNote = "Lower exposure lately — keep your routine consistent.";
   const barrierRisk = sensitive || dehydrated || dry;
 
   if (env === "A") {
@@ -314,12 +313,34 @@ function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
-function pushEmailToWaitlist(email: string) {
-  const clean = email.trim().toLowerCase();
-  const raw = localStorage.getItem(LS_WAITLIST);
-  const list: string[] = raw ? JSON.parse(raw) : [];
-  if (!list.includes(clean)) list.push(clean);
-  localStorage.setItem(LS_WAITLIST, JSON.stringify(list));
+/**
+ * Google Forms → Google Sheets (MVP)
+ * - We POST to the Google Form "formResponse"
+ * - It saves automatically into the linked Google Sheet
+ */
+
+// ✅ NEW FORM (ONLY ONE — KEEP IT SIMPLE)
+const FORM_ACTION_URLS = [
+  "https://docs.google.com/forms/d/e/1FAIpQLSfOPB056hxgFLiEmA78rhOsSfQhUPbgb0RndbNWtFCiaxKPFQ/formResponse",
+];
+
+// ✅ Email field entry ID from pre-filled link
+const EMAIL_ENTRY_ID = "entry.397639201";
+
+async function submitEmailToGoogleForm(email: string) {
+  const trimmed = email.trim();
+
+  const body = new URLSearchParams();
+  body.append(EMAIL_ENTRY_ID, trimmed);
+
+  await fetch(FORM_ACTION_URLS[0], {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+    },
+    body: body.toString(),
+    mode: "no-cors", // required for Google Forms
+  });
 }
 
 /* -------------------- PAGE -------------------- */
@@ -397,7 +418,7 @@ export default function ScanPage() {
     setEmailError(null);
   }
 
-  function handleSaveEmail() {
+  async function handleSaveEmail() {
     setEmailSavedMsg(null);
     setEmailError(null);
 
@@ -410,9 +431,13 @@ export default function ScanPage() {
       return;
     }
 
-    pushEmailToWaitlist(email);
-    setEmailSavedMsg("Saved. You’ll get the next skin brief (beta).");
-    setEmail("");
+    try {
+      await submitEmailToGoogleForm(email);
+      setEmailSavedMsg("You’re on the list. We’ll notify you when new features are ready.");
+      setEmail("");
+    } catch {
+      setEmailError("Couldn’t save right now. Please try again.");
+    }
   }
 
   return (
@@ -448,13 +473,7 @@ export default function ScanPage() {
           <p className="mb-2">How oily does your skin feel by midday?</p>
           {(["A", "B", "C", "D"] as const).map((k) => (
             <label key={k} className="block mb-1">
-              <input
-                type="radio"
-                name="oil"
-                value={k}
-                checked={oilQ === k}
-                onChange={() => setOilQ(k)}
-              />{" "}
+              <input type="radio" name="oil" value={k} checked={oilQ === k} onChange={() => setOilQ(k)} />{" "}
               {labelMap.oil[k]}
             </label>
           ))}
@@ -498,8 +517,8 @@ export default function ScanPage() {
         <div className="mb-6">
           <p className="mb-2">What’s your environment exposure lately?</p>
           <p className="text-xs text-slate-400 mb-2">
-            MVP note: this is manual input — we’re not pulling live weather yet. The guidance is meant to be useful
-            for the next few days, not just one moment.
+            MVP note: this is a manual environment input — we’re not pulling live weather yet. The guidance is designed
+            to be useful for the next few days.
           </p>
 
           {(["A", "B", "C"] as const).map((k) => (
@@ -629,7 +648,11 @@ export default function ScanPage() {
               </ul>
 
               <div className="mt-4">
-                <p className="text-sm text-slate-400 mb-2">Get my next skin brief (beta)</p>
+                <p className="text-sm text-slate-400 mb-2">Unlock early access</p>
+      <p className="text-xs text-slate-500 mb-2">
+  Join the early access list. You’ll be the first to test new logic drops — climate-aware upgrades, deeper routines,
+  and smarter guardrails.
+</p>
                 <div className="flex gap-2">
                   <input
                     value={email}
@@ -640,23 +663,20 @@ export default function ScanPage() {
                     autoComplete="email"
                   />
                   <button onClick={handleSaveEmail} className="bg-white text-black px-4 py-2 rounded text-sm">
-                    Save
+                    Get early access
                   </button>
                 </div>
 
                 {emailError && <p className="text-xs text-red-400 mt-2">{emailError}</p>}
                 {emailSavedMsg && <p className="text-xs text-emerald-400 mt-2">{emailSavedMsg}</p>}
 
-                <p className="text-xs text-slate-500 mt-2">
-                </p>
+                <p className="text-xs text-slate-500 mt-2">No spam. Updates only. Unsubscribe anytime.</p>
               </div>
             </div>
           </div>
         )}
 
-        <p className="mt-6 text-xs text-slate-500 text-center">
-          MVP demo only. Not medical advice.
-        </p>
+        <p className="mt-6 text-xs text-slate-500 text-center">MVP demo only. Not medical advice.</p>
 
         {/* tiny dev hint (safe) */}
         {savedInputs && (
